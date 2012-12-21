@@ -1,5 +1,5 @@
 '''
-VERSION 0.3
+VERSION 0.4
 
 Created on October 2012
 
@@ -9,10 +9,10 @@ CHANGE LOG
 -- 12/7/2012 (pbradley)  : Updated kvals list to reflect NDI fields vs CDC fields.  Updated MATCH_CRITERIA_x dictionaries.
 -- 12/17/2012 (pbradley) : Updated OutputMatchData() method to remove hardcoded input field header dependency.  Changed PatientID to ID.
                            Added kvals as an argument.
-                           
-                           
+-- 12/21/2012 (pbradley) : Changed output file to include M or P for Match or Possible match indicator.  Added possible match criteria.
+                           Changed match value output to be just the value of the matched fields, not the entire record.
 Design Notes:
--- Match order dependencies; once a match is found the two matched records are no longer used in subsequent searches
+-- Match order dependencies; once a match is found the base record is no longer used in subsequent searches
 
 '''
 import sys
@@ -39,8 +39,8 @@ MATCH_CRITERIA_1 = {'SSN': 1 }
 
 MATCH_CRITERIA_2 = {'LastName': 1,
                     'FirstName': 1,
-                     'DOB': 0.85,
-                     'Surname': 0.85 }
+                     'DOB': 0.9,
+                     'Surname': 1 }
 
 MATCH_CRITERIA_3 = {'LastName': 0.85,
                      'FirstName': 0.85,
@@ -70,7 +70,17 @@ CRITERIA_LIST = [MATCH_CRITERIA_1, MATCH_CRITERIA_2,
                  MATCH_CRITERIA_3, MATCH_CRITERIA_4,
                  MATCH_CRITERIA_5, MATCH_CRITERIA_6]
 
-POSBL_LIST = []
+POSMATCH_CRITERIA_1 = {'LastName': 1,
+                       'FirstName': 0.85,
+                       'DOB': 1,
+                       'Surname': 0.85 }
+
+POSMATCH_CRITERIA_2 = {'LastName': 1,
+                       'FirstName': 1,
+                       'DOB': 1 }
+
+
+POSBL_LIST = [POSMATCH_CRITERIA_1, POSMATCH_CRITERIA_2]
 
 class DataFile(object):
     def __init__(self, path):
@@ -125,6 +135,7 @@ class InFile(DataFile):
         self.tmp_dict = dict()
         self.mresdict = dict()
         self.lastcriteria = {}
+        self.resavg = 0
     def filtered_lines(self, pdb):
         keys = pdb.keys()
         for line in self.lines():
@@ -176,16 +187,23 @@ class InFile(DataFile):
             pcnt = 0
             i2match = False
             for criteria in POSBL_LIST:
+                self.resavg = 0
+                ccount = 0
                 for kval in criteria:  # criteria.items()
                     if self.mresdict.get(kval) >= criteria.get(kval):
-                        pcnt += 1
-                if pcnt == 4:
-                    i2match = True
+                        i2match = True
+                        self.resavg = self.resavg + self.mresdict.get(kval)
+                        ccount = ccount + 1
+                    else:
+                        i2match = False
+                        break
+                if i2match:
+                    self.resavg = self.resavg / ccount
                     self.lastcriteria = criteria
                     return i2match
                 else:
                     continue
-            return i2match
+            return i2match # False
         except Exception, e:
             logging.error('*****checkPosbl Exception*********')
             logging.error(str(e))
@@ -194,13 +212,18 @@ class InFile(DataFile):
         try:
             i2match = False
             for criteria in CRITERIA_LIST:
+                self.resavg = 0
+                ccount = 0
                 for kval in criteria:  # criteria.items()
                     if self.mresdict.get(kval) >= criteria.get(kval):
                         i2match = True
+                        self.resavg = self.resavg + self.mresdict.get(kval)
+                        ccount = ccount + 1
                     else:
                         i2match = False
                         break
                 if i2match:
+                    self.resavg = self.resavg / ccount
                     self.lastcriteria = criteria
                     return i2match
                 else:
@@ -213,8 +236,9 @@ class InFile(DataFile):
     def outputMatchData (self, i2match, iline_index, i2line_index, iline, i2line, outfile, sqlfile, kvals):
         #ptble = {False:'N', True: 'N', 'Possible':'Y'}
         try:
-            possible = 'N'
+            possible = 'M'
             if i2match:
+                if i2match is 'Possible': possible = 'P'                
                 self.mflag = True
                 if self.tmp_dict.has_key(iline_index):
                     self.tmp_dict[i2line_index] = self.tmp_dict.get(iline_index)
@@ -228,18 +252,18 @@ class InFile(DataFile):
                               + str(i2line['ID']) + ', '
                               + str(iline['LastName']) + ', '
                               + str(iline['FirstName']) + ', '
-                              + str(self.getmres_ave()) + ', '
+                              + str(self.resavg) + ', '
                               + str(self.lastcriteria) + '\n'
                               + '-------> ' + str(self.mresdict) + '\n')
                 sqlfile.write(str(iline['ID']) + ', '
                               + str(i2line['ID']) + ', '
-                              + str(self.getmres_ave()) + '\n')
-                if i2match is 'Possible': possible = 'Y'
+                              + str(self.resavg) + ', '
+                              + possible + '\n')
             elif not self.tmp_dict.has_key(iline_index):
                 self.tmp_dict[iline_index] = iline_index
-            mystring = str(self.tmp_dict.get(iline_index)) + possible + ', '
+            mystring = str(self.tmp_dict.get(iline_index)) + ', ' + possible + ', '
             for val in kvals:
-                mystring = mystring + str(iline[val])
+                mystring = mystring + ', ' + str(iline[val])
             mystring = mystring + '\n'
             outfile.write(mystring)
         except Exception, e:
@@ -278,7 +302,7 @@ class InFile(DataFile):
                         i2match = 'True'
                         self.outputMatchData(i2match, iline_index, i2line_index, iline, i2line, logfile, sfile, kvals)
                         break  # see comments above ... remove this BREAK for SQL
-                    # basic match
+                    # probably/possible match
                     if self.checkPosbl():
                         i2match = 'Possible'
                         self.outputMatchData(i2match, iline_index, i2line_index, iline, i2line, logfile, sfile, kvals)
