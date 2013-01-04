@@ -1,19 +1,25 @@
 '''
-VERSION 0.4
+VERSION 0.5
 
 Created on October 2012
 
 @author: pbradley
 
 CHANGE LOG
--- 12/7/2012 (pbradley)  : Updated kvals list to reflect NDI fields vs CDC fields.  Updated MATCH_CRITERIA_x dictionaries.
--- 12/17/2012 (pbradley) : Updated OutputMatchData() method to remove hardcoded input field header dependency.  Changed PatientID to ID.
+-- 12/7/2012 0.2 (pbradley)  : Updated kvals list to reflect NDI fields vs CDC fields.  Updated MATCH_CRITERIA_x dictionaries.
+-- 12/17/2012 0.3 (pbradley) : Updated OutputMatchData() method to remove hardcoded input field header dependency.  Changed PatientID to ID.
                            Added kvals as an argument.
--- 12/21/2012 (pbradley) : Changed output file to include M or P for Match or Possible match indicator.  Added possible match criteria.
+-- 12/21/2012 0.4 (pbradley) : Changed output file to include M or P for Match or Possible match indicator.  Added possible match criteria.
                            Changed match value output to be just the value of the matched fields, not the entire record.
+-- 01/03/2013 0.5 (pbradley) : Added support for New field within input file that will be used to prevent match comparisons
+                               between "old" (i.e. existing records).
 Design Notes:
 -- Match order dependencies; once a match is found the base record is no longer used in subsequent searches
 
+TODO:
+-- Need to consider the difference between NULL/missing fields vs differing data.  For example if there are two records where
+   the FNAME, LNAME, and DOB match, where one has a SSN and the other's SSN field is NULL -- how should this be handled compared
+   to a scenario where the other's SSN field is a DIFFERENT value.
 '''
 import sys
 sys.path = ['c:/work/SDRmatch2/febrl-0.4.2'] + ['c:/work/SDRmatch2/libsvm'] + sys.path
@@ -292,7 +298,12 @@ class InFile(DataFile):
                 #logging.debug('HERE1: ' + str(iline))
                 for i2line in inf2.lines():
                     i2match = False
+                    # only compare x to x+1 or greater
                     if i2line_index < iline_index + 1:
+                        i2line_index += 1
+                        continue
+                    # check to make sure that either iline or i2line record is "new"
+                    if iline['New'] == i2line['New'] == 'N':
                         i2line_index += 1
                         continue
                     # regular match
