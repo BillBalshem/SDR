@@ -1,5 +1,5 @@
 '''
-VERSION 0.5
+VERSION 0.7
 
 Created on October 2012
 
@@ -13,6 +13,9 @@ CHANGE LOG
                            Changed match value output to be just the value of the matched fields, not the entire record.
 -- 01/03/2013 0.5 (pbradley) : Added support for New field within input file that will be used to prevent match comparisons
                                between "old" (i.e. existing records).
+-- 01/08/2013 0.6 (pbradley) : removed trailing space in sqlfile.write() from ', ' to ','
+-- 01/24/2013 0.7 (pbradley) : added scoreRec() method to system to score the completeness of a record and return the score in the output
+                               file.  The last two fiels in the output file are the scores and the correspond to the IDs in the first two fields
 Design Notes:
 -- Match order dependencies; once a match is found the base record is no longer used in subsequent searches
 
@@ -23,7 +26,7 @@ TODO:
 '''
 import sys
 sys.path = ['c:/work/SDRmatch2/febrl-0.4.2'] + ['c:/work/SDRmatch2/libsvm'] + sys.path
-
+import time
 import os
 import errno
 import glob
@@ -88,6 +91,8 @@ POSMATCH_CRITERIA_2 = {'LastName': 1,
 
 POSBL_LIST = [POSMATCH_CRITERIA_1, POSMATCH_CRITERIA_2]
 
+REC_VAL = {'SSN':10, 'LastName':10, 'DOB':5, 'FirstName':5, 'MiddleName':1,'Suffix':1,'Sex':1,'Surname':1}
+
 class DataFile(object):
     def __init__(self, path):
         self.path = path
@@ -142,6 +147,8 @@ class InFile(DataFile):
         self.mresdict = dict()
         self.lastcriteria = {}
         self.resavg = 0
+        self.iline_val = 0
+        self.i2line_val = 0
     def filtered_lines(self, pdb):
         keys = pdb.keys()
         for line in self.lines():
@@ -186,6 +193,89 @@ class InFile(DataFile):
             logging.error('*****matchRec Exception*********')
             logging.error(str(e))
 
+    def scoreRec (self, kvals, i2line, iline):
+        ''' Creates a score for iline and i2line based on the completeness
+        and weight of each field
+        REF kvals = ['LastName', 'FirstName', 'MiddleName','Suffix','DOB','Sex','Surname','SSN']
+        '''
+        try:
+            self.iline_val = 0
+            self.i2line_val = 0
+            for rline in [iline, i2line]:
+                rline_val = 0
+                for kval in kvals:
+                    if kval is 'SSN':
+                        #print 'SSN :' + str(rline[kval]) + '... ' + str(rline[kval][0:3])
+                        if rline[kval].__len__() < 9:
+                            continue
+                        elif str(rline[kval][0:3]) == '000':
+                            continue
+                        elif str(rline[kval][0:3]) == '666':
+                            continue
+                        elif str(rline[kval][0:3]) >= '900':
+                            continue
+                        elif str(rline[kval][3:5]) == '00':
+                            continue
+                        elif str(rline[kval][5:9]) == '0000':
+                            continue
+                        else:
+                            rline_val = rline_val + 8
+                    elif kval is 'LastName':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 4
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 8
+                    elif kval is 'FirstName':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 2
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 4
+                    elif kval is 'DOB':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 2
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 4
+                    elif kval is 'Sex':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 1
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 2
+                    elif kval is 'Surname':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 1
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 2
+                    elif kval is 'Suffix':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 1
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 2
+                    elif kval is 'MiddleName':
+                        if rline[kval].__len__() == 0:
+                            continue
+                        elif rline[kval].__len__() == 1:
+                            rline_val = rline_val + 1
+                        elif rline[kval].__len__() > 1:
+                            rline_val = rline_val + 2
+                self.iline_val = self.i2line_val
+                self.i2line_val = rline_val
+        except Exception, e:
+            logging.error('*****scoreRec Exception*********')
+            logging.error(str(e))      
+        
+        
     def checkPosbl(self):
         # Check for possible  matches. This checks to see if 4 of the fields have a 
         # match value greater than 0.8
@@ -261,10 +351,12 @@ class InFile(DataFile):
                               + str(self.resavg) + ', '
                               + str(self.lastcriteria) + '\n'
                               + '-------> ' + str(self.mresdict) + '\n')
-                sqlfile.write(str(iline['ID']) + ', '
-                              + str(i2line['ID']) + ', '
-                              + str(self.resavg) + ', '
-                              + possible + '\n')
+                sqlfile.write(str(iline['ID']) + ','
+                              + str(i2line['ID']) + ','
+                              + str(self.resavg) + ','
+                              + possible + ','
+                              + str(self.iline_val) + ','
+                              + str(self.i2line_val) + '\n')
             elif not self.tmp_dict.has_key(iline_index):
                 self.tmp_dict[iline_index] = iline_index
             mystring = str(self.tmp_dict.get(iline_index)) + ', ' + possible + ', '
@@ -308,6 +400,7 @@ class InFile(DataFile):
                         continue
                     # regular match
                     self.matchRec(kvals, i2line, iline)
+                    self.scoreRec(kvals, i2line, iline)
                     logfile.write('R: ' + str(iline_index) + ', ' + str(i2line_index) + ', ' + str(self.mresdict) + '\n')
                     if self.checkCriteria():
                         i2match = 'True'
