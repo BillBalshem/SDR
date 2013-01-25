@@ -1,5 +1,5 @@
 '''
-VERSION 0.7
+VERSION 0.8
 
 Created on October 2012
 
@@ -16,6 +16,8 @@ CHANGE LOG
 -- 01/08/2013 0.6 (pbradley) : removed trailing space in sqlfile.write() from ', ' to ','
 -- 01/24/2013 0.7 (pbradley) : added scoreRec() method to system to score the completeness of a record and return the score in the output
                                file.  The last two fiels in the output file are the scores and the correspond to the IDs in the first two fields
+-- 01/25/2013 0.8 (pbradley) : Updated MATCH_CRITERIA_1 to include LastName
+
 Design Notes:
 -- Match order dependencies; once a match is found the base record is no longer used in subsequent searches
 
@@ -44,7 +46,8 @@ Dictionaries containing keys and minimum match values
 REF kvals = ['LastName', 'FirstName', 'MiddleName','Suffix','DOB','Sex','Surname','SSN']
 '''
 
-MATCH_CRITERIA_1 = {'SSN': 1 }
+MATCH_CRITERIA_1 = {'SSN': 1,
+                    'LastName': 0.9}
 
 MATCH_CRITERIA_2 = {'LastName': 1,
                     'FirstName': 1,
